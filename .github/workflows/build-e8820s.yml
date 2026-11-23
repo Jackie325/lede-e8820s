@@ -1,7 +1,16 @@
-name: Build LEDE for ZTE E8820S
+name: Build firmware for ZTE E8820S
 
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        description: '源码：lede-legacy 是最后一个支持 E8820S 的 LEDE 版本；immortalwrt 是当前主线'
+        required: true
+        default: 'lede-legacy'
+        type: choice
+        options:
+          - lede-legacy
+          - immortalwrt
   schedule:
     - cron: '0 18 * * 0'
 
@@ -17,12 +26,19 @@ jobs:
           sudo apt-get clean
           df -h /
 
-      - name: 拉取 lede 源码
+      # lede master 在 2026-11-01 迁移 Linux 6.18 时删掉了 zte_e8820s，
+      # 所以默认固定到删除前的最后一个提交 f1a2fa8（内核 6.12，HNAT 完整）
+      - name: 拉取源码
         uses: actions/checkout@v4
         with:
-          repository: coolsnowwolf/lede
-          ref: master
+          repository: ${{ inputs.source == 'immortalwrt' && 'immortalwrt/immortalwrt' || 'coolsnowwolf/lede' }}
+          ref: ${{ inputs.source == 'immortalwrt' && 'master' || 'f1a2fa877daa56ec5aff2525c3cbcaa3806b4cd8' }}
           fetch-depth: 1
+
+      - name: 显示所选源码
+        run: |
+          echo "selected source: ${{ inputs.source || 'lede-legacy (default)' }}"
+          echo "repository: ${{ inputs.source == 'immortalwrt' && 'immortalwrt/immortalwrt' || 'coolsnowwolf/lede' }}"
 
       - name: 安装编译依赖
         env:
@@ -85,7 +101,7 @@ jobs:
       - name: 校验设备定义
         run: |
           if ! grep -q '^CONFIG_TARGET_ramips_mt7621_DEVICE_zte_e8820s=y' .config; then
-            echo "::error::zte_e8820s 设备定义未生效，请检查 lede 源码是否仍包含该机型"
+            echo "::error::zte_e8820s 设备定义未生效，请检查所选源码是否包含该机型"
             grep -i 'e8820' .config || true
             exit 1
           fi
@@ -105,7 +121,7 @@ jobs:
       - name: 上传固件
         uses: actions/upload-artifact@v4
         with:
-          name: lede-e8820s-${{ github.run_number }}
+          name: e8820s-${{ inputs.source || 'lede-legacy' }}-${{ github.run_number }}
           path: |
             bin/targets/ramips/mt7621/*.bin
             bin/targets/ramips/mt7621/*.manifest
